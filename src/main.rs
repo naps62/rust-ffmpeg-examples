@@ -3,7 +3,7 @@ mod av;
 use std::path::PathBuf;
 
 fn main() {
-    let path = "samples/rick-and-morty.mkv";
+    let path = "samples/small_bunny_1080p_60fps.mp4";
     assert!(PathBuf::from(path).exists());
 
     unsafe {
@@ -13,8 +13,6 @@ fn main() {
         av::debug_ctx(ctx);
 
         let mut stream_ctx = av::open_video_stream(ctx, 0);
-
-        println!("{:?}", stream_ctx);
 
         av::read_frame(&mut stream_ctx);
     }

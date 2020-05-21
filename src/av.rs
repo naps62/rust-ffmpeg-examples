@@ -3,7 +3,7 @@ extern crate ffmpeg_dev;
 use std::os::raw::c_char;
 use std::slice;
 
-use ffmpeg_dev::extra;
+use ffmpeg_dev::extra::defs::{averror, averror_eof, eagain};
 use ffmpeg_dev::sys::{
     self, AVCodec, AVCodecContext, AVCodecParameters, AVDictionary, AVFormatContext, AVFrame,
     AVInputFormat, AVPacket, AVStream,
@@ -125,23 +125,22 @@ pub unsafe fn open_video_stream(ctx: *mut AVFormatContext, i: usize) -> VideoCtx
 }
 
 pub unsafe fn read_frame(ctx: &mut VideoCtx) {
-    let mut packets_to_process = 8;
+    let mut packets_to_process = 7;
 
     while sys::av_read_frame(ctx.ctx, ctx.packet) >= 0 {
         if ((*ctx.packet).stream_index == 0) {
             println!("AVPacket->pts {}", (*ctx.packet).pts);
-        }
-        let response = decode_packet(ctx);
+            let response = decode_packet(ctx);
 
-        if response < 0 {
-            break;
-        }
+            if response < 0 {
+                break;
+            }
 
-        if packets_to_process == 0 {
-            break;
+            if packets_to_process == 0 {
+                break;
+            }
+            packets_to_process = packets_to_process - 1;
         }
-
-        packets_to_process = packets_to_process - 1;
     }
 }
 
@@ -152,7 +151,8 @@ pub unsafe fn decode_packet(ctx: &mut VideoCtx) -> i32 {
 
     if response < 0 {
         println!(
-            "Error sending packet to decoder: {}",
+            "error {} sending packet to decoder: {}",
+            response,
             averror_to_str(response)
         );
         return response;
@@ -161,7 +161,14 @@ pub unsafe fn decode_packet(ctx: &mut VideoCtx) -> i32 {
     while response >= 0 {
         response = sys::avcodec_receive_frame(ctx.codec_ctx, ctx.frame);
 
-        if response == extra::defs::averror_eof() {
+        // if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
+        //   break;
+        // } else if (response < 0) {
+        //   logging("Error while receiving a frame from the decoder: %s", av_err2str(response));
+        //   return response;
+        // }
+
+        if response == averror(eagain()) || response == averror(averror_eof()) {
             break;
         } else if response < 0 {
             println!(
@@ -171,21 +178,34 @@ pub unsafe fn decode_packet(ctx: &mut VideoCtx) -> i32 {
             return response;
         }
 
-        let frame: AVFrame = *ctx.frame;
+        if response >= 0 {
+            let frame: AVFrame = *ctx.frame;
 
-        let type_char = std::char::from_u32(sys::av_get_picture_type_char(frame.pict_type) as u32);
+            let type_char =
+                std::char::from_u32(sys::av_get_picture_type_char(frame.pict_type) as u32).unwrap();
 
-        save_gray_frame(ctx.frame);
+            save_gray_frame(ctx.frame, (*ctx.codec_ctx).frame_number);
 
-        println!("Frame {:?} ({}) pts {} dts {} key_frame {} [codec_picture_number {}, display_picture_number {}]", type_char, (*ctx.codec_ctx).frame_number, frame.pts, frame.pkt_dts, frame.key_frame, frame.coded_picture_number, frame.display_picture_number);
+            println!(
+                "Frame {:?} (type={} sized={} bytes) pts {} key_frame {} [DTS {}]",
+                (*ctx.codec_ctx).frame_number,
+                type_char,
+                frame.pkt_size,
+                frame.pts,
+                frame.key_frame,
+                frame.coded_picture_number,
+            );
+        }
     }
 
     0
 }
 
-pub unsafe fn save_gray_frame(frame_ptr: *mut AVFrame) {
+pub unsafe fn save_gray_frame(frame_ptr: *mut AVFrame, number: i32) {
     use std::fs::File;
     use std::io::prelude::*;
+
+    let name = format!("frame-{}.pmg", number);
 
     let frame = *frame_ptr;
 
@@ -194,18 +214,18 @@ pub unsafe fn save_gray_frame(frame_ptr: *mut AVFrame) {
     let linesize = frame.linesize[0];
     let gray_channel = slice::from_raw_parts(frame.data[0], (width * linesize) as usize);
 
-    let mut file = File::create("frame.pgm").unwrap();
-    write!(file, "P5\n{} {}\n{}\n", width, height, 255);
+    println!("width {}, height {}, linesize {}", width, height, linesize);
 
-    println!("{} {}", width, height);
+    let mut file = File::create(name).unwrap();
+    write!(file, "P5\n{} {}\n{}\n", width, height, 255).unwrap();
+
     for i in 0..height {
         let start = (linesize * i) as usize;
-        let end = (start + width as usize);
+        let end = start + width as usize;
 
-        let line = &gray_channel[start..=end];
+        let line = &gray_channel[start..end];
 
-        println!("{:?}", line);
-        file.write_all(line);
+        file.write_all(line).unwrap();
     }
 }
 
