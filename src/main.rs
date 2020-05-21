@@ -1,19 +1,16 @@
 mod av;
+mod cmds;
+mod opts;
 
-use std::path::PathBuf;
+
+use clap::Clap;
 
 fn main() {
-    let path = "samples/small_bunny_1080p_60fps.mp4";
-    assert!(PathBuf::from(path).exists());
+    let opts = opts::Opts::parse();
 
-    unsafe {
-        let ctx = av::open_file(&path);
-
-        av::find_stream_info(ctx);
-        av::debug_ctx(ctx);
-
-        let mut stream_ctx = av::open_video_stream(ctx, 0);
-
-        av::read_frame(&mut stream_ctx);
+    match opts.subcmd {
+        opts::SubCommand::Frames(args) => {
+            cmds::frames::run(args);
+        }
     }
 }

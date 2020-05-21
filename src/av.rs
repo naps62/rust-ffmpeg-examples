@@ -128,7 +128,7 @@ pub unsafe fn read_frame(ctx: &mut VideoCtx) {
     let mut packets_to_process = 7;
 
     while sys::av_read_frame(ctx.ctx, ctx.packet) >= 0 {
-        if ((*ctx.packet).stream_index == 0) {
+        if (*ctx.packet).stream_index == 0 {
             println!("AVPacket->pts {}", (*ctx.packet).pts);
             let response = decode_packet(ctx);
 
