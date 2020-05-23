@@ -2,7 +2,6 @@ mod av;
 mod cmds;
 mod opts;
 
-
 use clap::Clap;
 
 fn main() {
@@ -11,6 +10,9 @@ fn main() {
     match opts.subcmd {
         opts::SubCommand::Frames(args) => {
             cmds::frames::run(args);
+        }
+        opts::SubCommand::Remux(args) => {
+            cmds::remux::run(args);
         }
     }
 }
