@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::ptr::null_mut;
 
 use ffmpeg_dev::sys;
 
@@ -21,12 +22,20 @@ pub fn run(args: opts::Remux) {
         let mut input = InputCtx::new(input_path);
         let mut output = OutputCtx::new(output_path);
 
-        let streams = input.get_streams();
+        let in_streams = input.get_streams();
+        let mut out_streams = Vec::new();
 
-        for i in 0..streams.len() {
-            let stream = streams[i];
+        for i in 0..in_streams.len() {
+            let in_stream = in_streams[i];
 
-            output.add_stream((*stream).codecpar);
+            let out_stream = sys::avformat_new_stream(output.av, null_mut());
+            assert!(out_stream != null_mut(), "failed to allocate output stream");
+            let response =
+                sys::avcodec_parameters_copy((*out_stream).codecpar, (*in_stream).codecpar);
+
+            utils::check_error(response);
+
+            out_streams.push(out_stream);
         }
 
         output.open_file(output_path);
@@ -41,13 +50,13 @@ pub fn run(args: opts::Remux) {
 
             let index = (*input.packet).stream_index as usize;
 
-            if index >= streams.len() {
+            if index >= out_streams.len() {
                 sys::av_packet_unref(input.packet);
                 continue;
             }
 
-            let in_stream = input.get_stream(index);
-            let out_stream = output.get_stream(index);
+            let in_stream = in_streams[index];
+            let out_stream = out_streams[index];
 
             (*input.packet).pts = sys::av_rescale_q_rnd(
                 (*input.packet).pts,
